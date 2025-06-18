@@ -1,3 +1,15 @@
+#include <Arduino.h>
+
+#include <USBHIDKeyboard.h>
+#include <USBHIDConsumerControl.h>
+#include <USBMIDI.h>
+#include <USBHIDSystemControl.h>
+#include <USBHIDVendor.h>
+#include <USBHIDGamepad.h>
+#include <USBHID.h>
+#include <USBVendor.h>
+#include <USBHIDMouse.h>
+
 #include <WiFiClient.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -19,11 +31,40 @@
 #include <ArduinoJson.h>
 #include <map>
 
-// Config default SSID, password and channel
-String ssid = "Evil Crow Cable Wind";   // Enter your SSID here
-String password = "123456789";  //Enter your Password here
-char *serverIP;
-int serverPort = 4444;
+#include "secrets.h"
+
+void usbEventCallback(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+void ensureNumLock();
+void writeLetterWindows(const char *asciiCode);
+void usbEventCallback(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+void ensureNumLock();
+void writeLetterWindows(const char *asciiCode);
+void writeLineWindows(const char *str);
+void toggleKey(uint8_t key, unsigned long *send_time);
+void resetKeyboardLEDs();
+void detectHostOS();
+void printDetectedOS();
+void onDetectOSRequested();
+void deleteFile(fs::FS &fs, const String &path);
+void readFile(fs::FS &fs, const String &path);
+void savePayloadMetadata(const String &filename, const String &name, const String &description);
+void handleFileUpload();
+void listDir(fs::FS &fs, const char *dirname, uint8_t levels);
+void handleStats();
+void handleUpdateHostname();
+void handleGetHostname();
+void setLayoutFromPayload(const String &payloadContent);
+void saveLayoutConfig(const String &layout);
+void payloadExec();
+void handleUpdateWiFi();
+void handleUpdateBackupWiFi();
+void handleDeleteWiFiConfig();
+void handleDeleteBackupWiFiConfig();
+void handleUpdateUSB();
+void handleDeleteUSBConfig();
+void handleLayout();
+void handleGetCurrentLayout();
+void handleDeletePayload();
 
 // Global variables
 String cmd;
@@ -61,7 +102,8 @@ HTTPUpdateServer httpUpdater;
 USBCDC USBSerial;
 USBHIDKeyboard Keyboard;
 
-enum HostOS {
+enum HostOS
+{
   OS_UNKNOWN,
   OS_WINDOWS,
   OS_LINUX,
@@ -92,80 +134,82 @@ extern const unsigned char sv_se[128];
 extern const unsigned char si_si[128];
 
 std::map<String, const unsigned char *> layoutMapInit = {
-  { "EN_US", en_us },
-  { "ES_ES", es_es },
-  { "FR_FR", fr_fr },
-  { "IT_IT", it_it },
-  { "DA_DK", da_dk },
-  { "DE_DE", de_de },
-  { "HR_HR", hr_hr },
-  { "HU_HU", hu_hu },
-  { "PT_PT", pt_pt },
-  { "PT_BR", pt_br },
-  { "BE_BE", be_be },
-  { "BR_BR", br_br },
-  { "CA_CA", ca_ca },
-  { "CA_FR", ca_fr },
-  { "SK_SK", sk_sk },
-  { "CZ_CZ", cz_cz },
-  { "SV_SE", sv_se },
-  { "SI_SI", si_si },
+    {"EN_US", en_us},
+    {"ES_ES", es_es},
+    {"FR_FR", fr_fr},
+    {"IT_IT", it_it},
+    {"DA_DK", da_dk},
+    {"DE_DE", de_de},
+    {"HR_HR", hr_hr},
+    {"HU_HU", hu_hu},
+    {"PT_PT", pt_pt},
+    {"PT_BR", pt_br},
+    {"BE_BE", be_be},
+    {"BR_BR", br_br},
+    {"CA_CA", ca_ca},
+    {"CA_FR", ca_fr},
+    {"SK_SK", sk_sk},
+    {"CZ_CZ", cz_cz},
+    {"SV_SE", sv_se},
+    {"SI_SI", si_si},
 };
 
 std::map<String, uint8_t> keyMap = {
-  { "KEY_LEFT_ALT", KEY_LEFT_ALT },
-  { "KEY_LEFT_GUI", KEY_LEFT_GUI },
-  { "KEY_LEFT_CTRL", KEY_LEFT_CTRL },
-  { "KEY_LEFT_SHIFT", KEY_LEFT_SHIFT },
-  { "KEY_RIGHT_ALT", KEY_RIGHT_ALT },
-  { "KEY_RIGHT_GUI", KEY_RIGHT_GUI },
-  { "KEY_RIGHT_CTRL", KEY_RIGHT_CTRL },
-  { "KEY_RIGHT_SHIFT", KEY_RIGHT_SHIFT },
-  { "KEY_ENTER", KEY_RETURN },
-  { "KEY_UP_ARROW", KEY_UP_ARROW },
-  { "KEY_DOWN_ARROW", KEY_DOWN_ARROW },
-  { "KEY_LEFT_ARROW", KEY_LEFT_ARROW },
-  { "KEY_RIGHT_ARROW", KEY_RIGHT_ARROW },
-  { "KEY_BACKSPACE", KEY_BACKSPACE },
-  { "KEY_TAB", KEY_TAB },
-  { "KEY_PAUSE", KEY_PAUSE },
-  { "KEY_INSERT", KEY_INSERT },
-  { "KEY_DELETE", KEY_DELETE },
-  { "KEY_PAGE_UP", KEY_PAGE_UP },
-  { "KEY_PAGE_DOWN", KEY_PAGE_DOWN },
-  { "KEY_ESC", KEY_ESC },
-  { "KEY_SPACE", KEY_SPACE },
-  { "KEY_HOME", KEY_HOME },
-  { "KEY_END", KEY_END },
-  { "KEY_CAPS_LOCK", KEY_CAPS_LOCK },
-  { "KEY_PRINT_SCREEN", KEY_PRINT_SCREEN },
-  { "KEY_SCROLL_LOCK", KEY_SCROLL_LOCK },
-  { "KEY_NUM_LOCK", KEY_NUM_LOCK },
-  { "KEY_MENU", KEY_MENU },
-  { "LED_NUMLOCK", LED_NUMLOCK },
-  { "LED_CAPSLOCK", LED_CAPSLOCK },
-  { "LED_SCROLLLOCK", LED_SCROLLLOCK },
-  { "LED_COMPOSE", LED_COMPOSE },
-  { "LED_KANA", LED_KANA },
-  { "KEY_F1", KEY_F1 },
-  { "KEY_F2", KEY_F2 },
-  { "KEY_F3", KEY_F3 },
-  { "KEY_F4", KEY_F4 },
-  { "KEY_F5", KEY_F5 },
-  { "KEY_F6", KEY_F6 },
-  { "KEY_F7", KEY_F7 },
-  { "KEY_F8", KEY_F8 },
-  { "KEY_F9", KEY_F9 },
-  { "KEY_F10", KEY_F10 },
-  { "KEY_F11", KEY_F11 },
-  { "KEY_F12", KEY_F12 }
-};
+    {"KEY_LEFT_ALT", KEY_LEFT_ALT},
+    {"KEY_LEFT_GUI", KEY_LEFT_GUI},
+    {"KEY_LEFT_CTRL", KEY_LEFT_CTRL},
+    {"KEY_LEFT_SHIFT", KEY_LEFT_SHIFT},
+    {"KEY_RIGHT_ALT", KEY_RIGHT_ALT},
+    {"KEY_RIGHT_GUI", KEY_RIGHT_GUI},
+    {"KEY_RIGHT_CTRL", KEY_RIGHT_CTRL},
+    {"KEY_RIGHT_SHIFT", KEY_RIGHT_SHIFT},
+    {"KEY_ENTER", KEY_RETURN},
+    {"KEY_UP_ARROW", KEY_UP_ARROW},
+    {"KEY_DOWN_ARROW", KEY_DOWN_ARROW},
+    {"KEY_LEFT_ARROW", KEY_LEFT_ARROW},
+    {"KEY_RIGHT_ARROW", KEY_RIGHT_ARROW},
+    {"KEY_BACKSPACE", KEY_BACKSPACE},
+    {"KEY_TAB", KEY_TAB},
+    {"KEY_PAUSE", KEY_PAUSE},
+    {"KEY_INSERT", KEY_INSERT},
+    {"KEY_DELETE", KEY_DELETE},
+    {"KEY_PAGE_UP", KEY_PAGE_UP},
+    {"KEY_PAGE_DOWN", KEY_PAGE_DOWN},
+    {"KEY_ESC", KEY_ESC},
+    {"KEY_SPACE", KEY_SPACE},
+    {"KEY_HOME", KEY_HOME},
+    {"KEY_END", KEY_END},
+    {"KEY_CAPS_LOCK", KEY_CAPS_LOCK},
+    {"KEY_PRINT_SCREEN", KEY_PRINT_SCREEN},
+    {"KEY_SCROLL_LOCK", KEY_SCROLL_LOCK},
+    {"KEY_NUM_LOCK", KEY_NUM_LOCK},
+    {"KEY_MENU", KEY_MENU},
+    {"LED_NUMLOCK", LED_NUMLOCK},
+    {"LED_CAPSLOCK", LED_CAPSLOCK},
+    {"LED_SCROLLLOCK", LED_SCROLLLOCK},
+    {"LED_COMPOSE", LED_COMPOSE},
+    {"LED_KANA", LED_KANA},
+    {"KEY_F1", KEY_F1},
+    {"KEY_F2", KEY_F2},
+    {"KEY_F3", KEY_F3},
+    {"KEY_F4", KEY_F4},
+    {"KEY_F5", KEY_F5},
+    {"KEY_F6", KEY_F6},
+    {"KEY_F7", KEY_F7},
+    {"KEY_F8", KEY_F8},
+    {"KEY_F9", KEY_F9},
+    {"KEY_F10", KEY_F10},
+    {"KEY_F11", KEY_F11},
+    {"KEY_F12", KEY_F12}};
 
-void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-  if (event_base == ARDUINO_USB_HID_KEYBOARD_EVENTS) {
-    arduino_usb_hid_keyboard_event_data_t* data = (arduino_usb_hid_keyboard_event_data_t*)event_data;
+void usbEventCallback(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+  if (event_base == ARDUINO_USB_HID_KEYBOARD_EVENTS)
+  {
+    arduino_usb_hid_keyboard_event_data_t *data = (arduino_usb_hid_keyboard_event_data_t *)event_data;
 
-    if (event_id == ARDUINO_USB_HID_KEYBOARD_LED_EVENT) {
+    if (event_id == ARDUINO_USB_HID_KEYBOARD_LED_EVENT)
+    {
       led_response_received = true;
       led_event_count++;
       led_event_time = millis();
@@ -185,52 +229,102 @@ void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, 
   }
 }
 
-void ensureNumLock() {
-  if (!numlock_checked) {
+void ensureNumLock()
+{
+  if (!numlock_checked)
+  {
     return;
   }
-  if (!num_status) {
+  if (!num_status)
+  {
     Keyboard.press(KEY_NUM_LOCK);
     delay(100);
     Keyboard.releaseAll();
   }
 }
 
-const char* ascii_convert(char c) {
+const char *ascii_convert(char c)
+{
   static char buffer[4];
-  if (c >= 32 && c <= 126) {
+  if (c >= 32 && c <= 126)
+  {
     snprintf(buffer, sizeof(buffer), "%d", c);
     return buffer;
   }
   return "000";
 }
 
-void writeLetterWindows(const char* asciiCode) {
+void writeLetterWindows(const char *asciiCode)
+{
   Keyboard.press(KEY_LEFT_ALT);
 
-  for (int i = 0; asciiCode[i] != '\0'; i++) {
-    switch (asciiCode[i]) {
-      case '0': Keyboard.press(KEY_KP_0); delay(2); Keyboard.release(KEY_KP_0); break;
-      case '1': Keyboard.press(KEY_KP_1); delay(2); Keyboard.release(KEY_KP_1); break;
-      case '2': Keyboard.press(KEY_KP_2); delay(2); Keyboard.release(KEY_KP_2); break;
-      case '3': Keyboard.press(KEY_KP_3); delay(2); Keyboard.release(KEY_KP_3); break;
-      case '4': Keyboard.press(KEY_KP_4); delay(2); Keyboard.release(KEY_KP_4); break;
-      case '5': Keyboard.press(KEY_KP_5); delay(2); Keyboard.release(KEY_KP_5); break;
-      case '6': Keyboard.press(KEY_KP_6); delay(2); Keyboard.release(KEY_KP_6); break;
-      case '7': Keyboard.press(KEY_KP_7); delay(2); Keyboard.release(KEY_KP_7); break;
-      case '8': Keyboard.press(KEY_KP_8); delay(2); Keyboard.release(KEY_KP_8); break;
-      case '9': Keyboard.press(KEY_KP_9); delay(2); Keyboard.release(KEY_KP_9); break;
+  for (int i = 0; asciiCode[i] != '\0'; i++)
+  {
+    switch (asciiCode[i])
+    {
+    case '0':
+      Keyboard.press(KEY_KP_0);
+      delay(2);
+      Keyboard.release(KEY_KP_0);
+      break;
+    case '1':
+      Keyboard.press(KEY_KP_1);
+      delay(2);
+      Keyboard.release(KEY_KP_1);
+      break;
+    case '2':
+      Keyboard.press(KEY_KP_2);
+      delay(2);
+      Keyboard.release(KEY_KP_2);
+      break;
+    case '3':
+      Keyboard.press(KEY_KP_3);
+      delay(2);
+      Keyboard.release(KEY_KP_3);
+      break;
+    case '4':
+      Keyboard.press(KEY_KP_4);
+      delay(2);
+      Keyboard.release(KEY_KP_4);
+      break;
+    case '5':
+      Keyboard.press(KEY_KP_5);
+      delay(2);
+      Keyboard.release(KEY_KP_5);
+      break;
+    case '6':
+      Keyboard.press(KEY_KP_6);
+      delay(2);
+      Keyboard.release(KEY_KP_6);
+      break;
+    case '7':
+      Keyboard.press(KEY_KP_7);
+      delay(2);
+      Keyboard.release(KEY_KP_7);
+      break;
+    case '8':
+      Keyboard.press(KEY_KP_8);
+      delay(2);
+      Keyboard.release(KEY_KP_8);
+      break;
+    case '9':
+      Keyboard.press(KEY_KP_9);
+      delay(2);
+      Keyboard.release(KEY_KP_9);
+      break;
     }
   }
   Keyboard.release(KEY_LEFT_ALT);
   delay(5);
 }
 
-void writeLineWindows(const char* str) {
+void writeLineWindows(const char *str)
+{
   ensureNumLock();
 
-  while (*str) {
-    const char* code = ascii_convert(*str);
+  while (*str)
+  {
+    const char *code = ascii_convert(*str);
     writeLetterWindows(code);
     str++;
     delay(2);
@@ -240,7 +334,8 @@ void writeLineWindows(const char* str) {
   Keyboard.releaseAll();
 }
 
-void toggleKey(uint8_t key, unsigned long* send_time) {
+void toggleKey(uint8_t key, unsigned long *send_time)
+{
   *send_time = millis();
   led_response_received = false;
 
@@ -250,24 +345,29 @@ void toggleKey(uint8_t key, unsigned long* send_time) {
   delay(800);
 }
 
-void resetKeyboardLEDs() {
+void resetKeyboardLEDs()
+{
   unsigned long temp_time;
   delay(500);
-  if (caps_status) {
+  if (caps_status)
+  {
     toggleKey(KEY_CAPS_LOCK, &temp_time);
     delay(800);
   }
-  if (num_status) {
+  if (num_status)
+  {
     toggleKey(KEY_NUM_LOCK, &temp_time);
     delay(800);
   }
-  if (scroll_status) {
+  if (scroll_status)
+  {
     toggleKey(KEY_SCROLL_LOCK, &temp_time);
     delay(800);
   }
 }
 
-void detectHostOS() {
+void detectHostOS()
+{
   led_event_count = 0;
   caps_status = num_status = scroll_status = 0;
   caps_delay = num_delay = scroll_delay = 0;
@@ -277,7 +377,8 @@ void detectHostOS() {
   toggleKey(KEY_CAPS_LOCK, &caps_sent_time);
   delay(1500);
 
-  if (!led_response_received && caps_status != initial_caps) {
+  if (!led_response_received && caps_status != initial_caps)
+  {
     detected_os = OS_IOS;
     return;
   }
@@ -287,247 +388,293 @@ void detectHostOS() {
   toggleKey(KEY_SCROLL_LOCK, &scroll_sent_time);
   delay(1200);
 
-  if (led_event_count == 0) {
+  if (led_event_count == 0)
+  {
     detected_os = (caps_status != initial_caps) ? OS_IOS : OS_MACOS;
   }
-  else if (led_event_count >= 3 && caps_delay < 100 && num_delay < 100 && scroll_delay < 100) {
+  else if (led_event_count >= 3 && caps_delay < 100 && num_delay < 100 && scroll_delay < 100)
+  {
     detected_os = OS_WINDOWS;
   }
-  else {
+  else
+  {
     bool has_numlock_response = (num_delay > 0);
     bool has_scrolllock_response = (scroll_delay > 0);
-    
-    if (num_status && !scroll_status && has_numlock_response && !has_scrolllock_response) {
+
+    if (num_status && !scroll_status && has_numlock_response && !has_scrolllock_response)
+    {
       detected_os = OS_LINUX;
     }
-    else if ((caps_delay > 200 || num_delay > 200 || scroll_delay > 200) && 
-             (has_numlock_response || has_scrolllock_response)) {
+    else if ((caps_delay > 200 || num_delay > 200 || scroll_delay > 200) &&
+             (has_numlock_response || has_scrolllock_response))
+    {
       detected_os = OS_ANDROID;
     }
-    else if (caps_status != initial_caps) {
+    else if (caps_status != initial_caps)
+    {
       detected_os = OS_IOS;
     }
-    else {
+    else
+    {
       detected_os = OS_UNKNOWN;
     }
   }
 }
 
-void printDetectedOS() {
-  switch (detected_os) {
-    case OS_WINDOWS:
-      os = "Windows";
-      break;
-    case OS_LINUX:
-      os = "Linux";
-      break;
-    case OS_MACOS:
-      os = "macOS";
-      break;
-    case OS_IOS:
-      os = "iOS";
-      break;
-    case OS_ANDROID:
-      os = "Android";
-      break;
-    default:
-      os = "OS Unknown";
-      break;
+void printDetectedOS()
+{
+  switch (detected_os)
+  {
+  case OS_WINDOWS:
+    os = "Windows";
+    break;
+  case OS_LINUX:
+    os = "Linux";
+    break;
+  case OS_MACOS:
+    os = "macOS";
+    break;
+  case OS_IOS:
+    os = "iOS";
+    break;
+  case OS_ANDROID:
+    os = "Android";
+    break;
+  default:
+    os = "OS Unknown";
+    break;
   }
   os_detection_complete = true;
 }
 
-void onDetectOSRequested() {
+void onDetectOSRequested()
+{
   resetKeyboardLEDs();
   detectHostOS();
   resetKeyboardLEDs();
   printDetectedOS();
 }
 
-void deleteFile(fs::FS &fs, const String &path) {
-  if (fs.remove(path)) {
+void deleteFile(fs::FS &fs, const String &path)
+{
+  if (fs.remove(path))
+  {
     controlserver.send(200, "text/plain", "File deleted successfully");
-  } else {
+  }
+  else
+  {
     controlserver.send(500, "text/plain", "Failed to delete file");
   }
 }
 
-void readFile(fs::FS &fs, const String &path) {
-    String payloadContent = "";
+void readFile(fs::FS &fs, const String &path)
+{
+  String payloadContent = "";
 
-    File file = fs.open(path);
-    if (!file || file.isDirectory()) {
-        FileList = "Failed to open file";
-        return;
-    }
-    while (file.available()) {
-        payloadContent += file.readString();
-    }
-    file.close();
+  File file = fs.open(path);
+  if (!file || file.isDirectory())
+  {
+    FileList = "Failed to open file";
+    return;
+  }
+  while (file.available())
+  {
+    payloadContent += file.readString();
+  }
+  file.close();
 
-    if (path == "") {
-        FileList = "File name is empty";
-        return;
-    }
+  if (path == "")
+  {
+    FileList = "File name is empty";
+    return;
+  }
 
-    // Set layout based on payload content
-    setLayoutFromPayload(payloadContent);
+  // Set layout based on payload content
+  setLayoutFromPayload(payloadContent);
 
-    FileList = StaticFileList;
-    FileList.replace("{{path}}", path);
-    FileList.replace("{{payloadContent}}", payloadContent);
+  FileList = StaticFileList;
+  FileList.replace("{{path}}", path);
+  FileList.replace("{{payloadContent}}", payloadContent);
 
-    livepayload = payloadContent;
+  livepayload = payloadContent;
 }
 
-
 // Helper function to save payload metadata
-void savePayloadMetadata(const String &filename, const String &name, const String &description) {
-    String metaPath = filename + ".meta";
-    File metaFile = LittleFS.open(metaPath, FILE_WRITE);
-    if (metaFile) {
-        metaFile.println(name);
-        metaFile.println(description);
-        metaFile.close();
-    }
+void savePayloadMetadata(const String &filename, const String &name, const String &description)
+{
+  String metaPath = filename + ".meta";
+  File metaFile = LittleFS.open(metaPath, FILE_WRITE);
+  if (metaFile)
+  {
+    metaFile.println(name);
+    metaFile.println(description);
+    metaFile.close();
+  }
 }
 
 // Helper function to read payload metadata
-String readPayloadMetadata(const String &filename, bool getName) {
-    String metaPath = filename + ".meta";
-    
-    // If no metadata file exists, return defaults
-    if (!LittleFS.exists(metaPath)) {
-        if (getName) {
-            // Extract filename without path
-            int lastSlash = filename.lastIndexOf('/');
-            return filename.substring(lastSlash + 1);
-        }
-        return "No description";
+String readPayloadMetadata(const String &filename, bool getName)
+{
+  String metaPath = filename + ".meta";
+
+  // If no metadata file exists, return defaults
+  if (!LittleFS.exists(metaPath))
+  {
+    if (getName)
+    {
+      // Extract filename without path
+      int lastSlash = filename.lastIndexOf('/');
+      return filename.substring(lastSlash + 1);
     }
-    
-    File metaFile = LittleFS.open(metaPath, FILE_READ);
-    if (!metaFile) {
-        if (getName) {
-            int lastSlash = filename.lastIndexOf('/');
-            return filename.substring(lastSlash + 1);
-        }
-        return "No description";
+    return "No description";
+  }
+
+  File metaFile = LittleFS.open(metaPath, FILE_READ);
+  if (!metaFile)
+  {
+    if (getName)
+    {
+      int lastSlash = filename.lastIndexOf('/');
+      return filename.substring(lastSlash + 1);
     }
-    
-    String name = metaFile.readStringUntil('\n');
-    name.trim();
-    String description = metaFile.readStringUntil('\n');
-    description.trim();
-    metaFile.close();
-    
-    // Handle empty values
-    if (getName) {
-        return name.length() > 0 ? name : filename.substring(filename.lastIndexOf('/') + 1);
-    } else {
-        return description.length() > 0 ? description : "No description";
-    }
+    return "No description";
+  }
+
+  String name = metaFile.readStringUntil('\n');
+  name.trim();
+  String description = metaFile.readStringUntil('\n');
+  description.trim();
+  metaFile.close();
+
+  // Handle empty values
+  if (getName)
+  {
+    return name.length() > 0 ? name : filename.substring(filename.lastIndexOf('/') + 1);
+  }
+  else
+  {
+    return description.length() > 0 ? description : "No description";
+  }
 }
 
-void handleFileUpload() {
-    HTTPUpload &upload = controlserver.upload();
-    static const uint32_t MAX_FILE_SIZE = 204800; // 200KB limit
-    static uint32_t totalUploaded = 0;
-    static String payloadName, payloadDescription, fileName;
+void handleFileUpload()
+{
+  HTTPUpload &upload = controlserver.upload();
+  static const uint32_t MAX_FILE_SIZE = 204800; // 200KB limit
+  static uint32_t totalUploaded = 0;
+  static String payloadName, payloadDescription, fileName;
 
-    if (upload.status == UPLOAD_FILE_START) {
-        totalUploaded = 0;
-        payloadName = controlserver.arg("payloadName");
-        payloadDescription = controlserver.arg("payloadDescription");
-        
-        // Get filename from upload, not from args
-        fileName = upload.filename;
-        
-        if (!fileName.endsWith(".txt")) {
-            controlserver.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Only .txt files allowed\"}");
-            return;
-        }
+  if (upload.status == UPLOAD_FILE_START)
+  {
+    totalUploaded = 0;
+    payloadName = controlserver.arg("payloadName");
+    payloadDescription = controlserver.arg("payloadDescription");
 
-        if (!fileName.startsWith("/")) {
-            fileName = "/payloads/" + fileName;
-        }
+    // Get filename from upload, not from args
+    fileName = upload.filename;
 
-        if (!LittleFS.exists("/payloads")) {
-            LittleFS.mkdir("/payloads");
-        }
-
-        fsUploadFile = LittleFS.open(fileName, "w");
-        if (!fsUploadFile) {
-            controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Cannot create file\"}");
-            return;
-        }
-    } 
-    else if (upload.status == UPLOAD_FILE_WRITE) {
-        totalUploaded += upload.currentSize;
-        if (totalUploaded > MAX_FILE_SIZE) {
-            fsUploadFile.close();
-            LittleFS.remove(fsUploadFile.name());
-            controlserver.send(413, "application/json", "{\"status\":\"error\",\"message\":\"File exceeded size limit\"}");
-            return;
-        }
-
-        if (fsUploadFile) {
-            fsUploadFile.write(upload.buf, upload.currentSize);
-        }
+    if (!fileName.endsWith(".txt"))
+    {
+      controlserver.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Only .txt files allowed\"}");
+      return;
     }
-    else if (upload.status == UPLOAD_FILE_END) {
-        if (fsUploadFile) {
-            fsUploadFile.close();
-            // Save metadata only if we have values
-            if (payloadName.length() > 0 || payloadDescription.length() > 0) {
-                savePayloadMetadata(fileName, payloadName, payloadDescription);
-            }
-        }
+
+    if (!fileName.startsWith("/"))
+    {
+      fileName = "/payloads/" + fileName;
     }
-    else {
-        if (fsUploadFile) {
-            fsUploadFile.close();
-            LittleFS.remove(fsUploadFile.name());
-        }
-        controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Upload failed\"}");
+
+    if (!LittleFS.exists("/payloads"))
+    {
+      LittleFS.mkdir("/payloads");
     }
+
+    fsUploadFile = LittleFS.open(fileName, "w");
+    if (!fsUploadFile)
+    {
+      controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Cannot create file\"}");
+      return;
+    }
+  }
+  else if (upload.status == UPLOAD_FILE_WRITE)
+  {
+    totalUploaded += upload.currentSize;
+    if (totalUploaded > MAX_FILE_SIZE)
+    {
+      fsUploadFile.close();
+      LittleFS.remove(fsUploadFile.name());
+      controlserver.send(413, "application/json", "{\"status\":\"error\",\"message\":\"File exceeded size limit\"}");
+      return;
+    }
+
+    if (fsUploadFile)
+    {
+      fsUploadFile.write(upload.buf, upload.currentSize);
+    }
+  }
+  else if (upload.status == UPLOAD_FILE_END)
+  {
+    if (fsUploadFile)
+    {
+      fsUploadFile.close();
+      // Save metadata only if we have values
+      if (payloadName.length() > 0 || payloadDescription.length() > 0)
+      {
+        savePayloadMetadata(fileName, payloadName, payloadDescription);
+      }
+    }
+  }
+  else
+  {
+    if (fsUploadFile)
+    {
+      fsUploadFile.close();
+      LittleFS.remove(fsUploadFile.name());
+    }
+    controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Upload failed\"}");
+  }
 }
 
-void listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
-    FileList = StaticListPayloads;
+void listDir(fs::FS &fs, const char *dirname, uint8_t levels)
+{
+  FileList = StaticListPayloads;
 
-    File root = fs.open(dirname);
-    if (!root || !root.isDirectory()) {
-        FileList += "<br>Empty<br></body></html>";
-        return;
+  File root = fs.open(dirname);
+  if (!root || !root.isDirectory())
+  {
+    FileList += "<br>Empty<br></body></html>";
+    return;
+  }
+
+  File file = root.openNextFile();
+  while (file)
+  {
+    String fileName = "/payloads/";
+    fileName += file.name();
+
+    // Skip metadata files
+    if (fileName.endsWith(".meta"))
+    {
+      file = root.openNextFile();
+      continue;
     }
 
-    File file = root.openNextFile();
-    while (file) {
-        String fileName = "/payloads/";
-        fileName += file.name();
-        
-        // Skip metadata files
-        if (fileName.endsWith(".meta")) {
-            file = root.openNextFile();
-            continue;
-        }
+    String payloadName = readPayloadMetadata(fileName, true);
+    String payloadDesc = readPayloadMetadata(fileName, false);
 
-        String payloadName = readPayloadMetadata(fileName, true);
-        String payloadDesc = readPayloadMetadata(fileName, false);
-        
-        FileList += "<div class='payload-item'>";
-        FileList += "<a class=\"pyaloadButton\" href=\"/showpayload?payload=" + fileName + "\">" + payloadName + "</a>";
-        FileList += "<div class='payload-desc'>" + payloadDesc + "</div>";
-        FileList += "<div class='payload-filename'>" + String(file.name()) + "</div>";
-        FileList += "</div>";
+    FileList += "<div class='payload-item'>";
+    FileList += "<a class=\"pyaloadButton\" href=\"/showpayload?payload=" + fileName + "\">" + payloadName + "</a>";
+    FileList += "<div class='payload-desc'>" + payloadDesc + "</div>";
+    FileList += "<div class='payload-filename'>" + String(file.name()) + "</div>";
+    FileList += "</div>";
 
-        file = root.openNextFile();
-    }
-    FileList += "</body></html>";
+    file = root.openNextFile();
+  }
+  FileList += "</body></html>";
 }
 
-void handleStats() {
+void handleStats()
+{
   String json = "{";
   json += "\"uptime\":" + String(millis() / 1000);
   json += ",\"cpu0\":" + String(getCpuFrequencyMhz());
@@ -545,108 +692,130 @@ void handleStats() {
   controlserver.send(200, "application/json", json);
 }
 
-void handleUpdateHostname() {
-    if (controlserver.hasArg("hostname")) {
-        String newHostname = controlserver.arg("hostname");
-        
-        File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_WRITE);
-        if (!fsUploadFile) {
-            controlserver.send(500, "application/json", "{\"success\":false,\"message\":\"Failed to save hostname\"}");
-            return;
-        }
-        
-        fsUploadFile.println(newHostname);
-        fsUploadFile.close();
-        controlserver.send(200, "application/json", "{\"success\":true,\"message\":\"Hostname updated successfully! Device will restart.\"}");
-        delay(1000);
-        ESP.restart();
-    } else {
-        controlserver.send(400, "application/json", "{\"success\":false,\"message\":\"No hostname provided\"}");
+void handleUpdateHostname()
+{
+  if (controlserver.hasArg("hostname"))
+  {
+    String newHostname = controlserver.arg("hostname");
+
+    File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_WRITE);
+    if (!fsUploadFile)
+    {
+      controlserver.send(500, "application/json", "{\"success\":false,\"message\":\"Failed to save hostname\"}");
+      return;
     }
+
+    fsUploadFile.println(newHostname);
+    fsUploadFile.close();
+    controlserver.send(200, "application/json", "{\"success\":true,\"message\":\"Hostname updated successfully! Device will restart.\"}");
+    delay(1000);
+    ESP.restart();
+  }
+  else
+  {
+    controlserver.send(400, "application/json", "{\"success\":false,\"message\":\"No hostname provided\"}");
+  }
 }
 
-void handleGetHostname() {
-    String currentHostname = "cable-wind"; // default
-    
-    if (LittleFS.exists("/hostname_config.txt")) {
-        File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_READ);
-        if (fsUploadFile) {
-            currentHostname = fsUploadFile.readStringUntil('\n');
-            currentHostname.trim();
-            fsUploadFile.close();
-        }
+void handleGetHostname()
+{
+  String currentHostname = "cable-wind"; // default
+
+  if (LittleFS.exists("/hostname_config.txt"))
+  {
+    File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_READ);
+    if (fsUploadFile)
+    {
+      currentHostname = fsUploadFile.readStringUntil('\n');
+      currentHostname.trim();
+      fsUploadFile.close();
     }
-    
-    controlserver.send(200, "text/plain", currentHostname);
+  }
+
+  controlserver.send(200, "text/plain", currentHostname);
 }
 
 // Function to parse and set layout from payload content
-void setLayoutFromPayload(const String &payloadContent) {
-    int layoutPos = payloadContent.indexOf("# Layout: ");
+void setLayoutFromPayload(const String &payloadContent)
+{
+  int layoutPos = payloadContent.indexOf("# Layout: ");
 
-    if (layoutPos != -1) {
-        int start = layoutPos + 10;
-        int end = payloadContent.indexOf('\n', start);
-        if (end == -1) {
-            end = payloadContent.length();
-        }
-        String tmp_layout = payloadContent.substring(start, end);
-        tmp_layout.trim();
-
-        if (layoutMapInit.find(tmp_layout) != layoutMapInit.end()) {
-            selected_layout = layoutMapInit[tmp_layout];
-            Keyboard.setLayout(selected_layout);
-            return; // Exit after setting layout from payload
-        }
+  if (layoutPos != -1)
+  {
+    int start = layoutPos + 10;
+    int end = payloadContent.indexOf('\n', start);
+    if (end == -1)
+    {
+      end = payloadContent.length();
     }
-    
-    // Fallback to saved layout if no layout specified in payload
-    if (LittleFS.exists("/layout_config.txt")) {
-        File fsUploadFile = LittleFS.open("/layout_config.txt", FILE_READ);
-        if (fsUploadFile) {
-            String layoutKey = fsUploadFile.readStringUntil('\n');
-            layoutKey.trim();
-            fsUploadFile.close();
+    String tmp_layout = payloadContent.substring(start, end);
+    tmp_layout.trim();
 
-            auto it = layoutMapInit.find(layoutKey);
-            if (it != layoutMapInit.end()) {
-                selected_layout = it->second;
-                Keyboard.setLayout(selected_layout);
-            }
-        }
+    if (layoutMapInit.find(tmp_layout) != layoutMapInit.end())
+    {
+      selected_layout = layoutMapInit[tmp_layout];
+      Keyboard.setLayout(selected_layout);
+      return; // Exit after setting layout from payload
     }
+  }
+
+  // Fallback to saved layout if no layout specified in payload
+  if (LittleFS.exists("/layout_config.txt"))
+  {
+    File fsUploadFile = LittleFS.open("/layout_config.txt", FILE_READ);
+    if (fsUploadFile)
+    {
+      String layoutKey = fsUploadFile.readStringUntil('\n');
+      layoutKey.trim();
+      fsUploadFile.close();
+
+      auto it = layoutMapInit.find(layoutKey);
+      if (it != layoutMapInit.end())
+      {
+        selected_layout = it->second;
+        Keyboard.setLayout(selected_layout);
+      }
+    }
+  }
 }
 
 // Function to get the currently selected layout
-String getCurrentLayout() {
+String getCurrentLayout()
+{
   String currentLayout = "en_us"; // Default to EN_US
-  
-  if (LittleFS.exists("/layout_config.txt")) {
+
+  if (LittleFS.exists("/layout_config.txt"))
+  {
     File fsUploadFile = LittleFS.open("/layout_config.txt", FILE_READ);
-    if (fsUploadFile) {
+    if (fsUploadFile)
+    {
       currentLayout = fsUploadFile.readStringUntil('\n');
       currentLayout.trim();
       fsUploadFile.close();
     }
   }
-  
+
   return currentLayout;
 }
 
 // Function to save the layout configuration to a file
-void saveLayoutConfig(const String &layout) {
+void saveLayoutConfig(const String &layout)
+{
   File fsUploadFile = LittleFS.open("/layout_config.txt", FILE_WRITE);
-  if (!fsUploadFile) {
+  if (!fsUploadFile)
+  {
     controlserver.send(500, "text/plain", "Failed to open file for writing");
     return;
   }
-  
+
   fsUploadFile.println(layout);
   fsUploadFile.close();
 }
 
-void payloadExec() {
-  if (cmd.startsWith("RunMac ")) {
+void payloadExec()
+{
+  if (cmd.startsWith("RunMac "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     Keyboard.press(KEY_LEFT_GUI);
     Keyboard.press(KEY_SPACE);
@@ -656,7 +825,8 @@ void payloadExec() {
     Keyboard.println(Command + 7);
   }
 
-  else if (cmd.startsWith("RunLauncher ")) {
+  else if (cmd.startsWith("RunLauncher "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     Keyboard.press(KEY_LEFT_ALT);
     Keyboard.press(KEY_F2);
@@ -666,7 +836,8 @@ void payloadExec() {
     Keyboard.println(Command + 12);
   }
 
-  else if (cmd.startsWith("RunNix ")) {
+  else if (cmd.startsWith("RunNix "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     Keyboard.press(KEY_LEFT_CTRL);
     Keyboard.press(KEY_LEFT_ALT);
@@ -677,7 +848,8 @@ void payloadExec() {
     Keyboard.println(Command + 7);
   }
 
-  else if (cmd.startsWith("RunWin ")) {
+  else if (cmd.startsWith("RunWin "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     Keyboard.press(KEY_LEFT_GUI);
     Keyboard.print('r');
@@ -687,11 +859,13 @@ void payloadExec() {
     Keyboard.println(Command + 7);
   }
 
-  else if (cmd.startsWith("ShellWin ")) {
+  else if (cmd.startsWith("ShellWin "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     serverIP = Command + 9;
 
-    if (!clientServer.connect(serverIP, serverPort)) {
+    if (!clientServer.connect(serverIP, serverPort))
+    {
       while (1)
         ;
     }
@@ -712,11 +886,13 @@ void payloadExec() {
     Keyboard.releaseAll();
   }
 
-  else if (cmd.startsWith("ShellNix ")) {
+  else if (cmd.startsWith("ShellNix "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     serverIP = Command + 9;
 
-    if (!clientServer.connect(serverIP, serverPort)) {
+    if (!clientServer.connect(serverIP, serverPort))
+    {
       while (1)
         ;
     }
@@ -732,24 +908,28 @@ void payloadExec() {
     Keyboard.println("sh -i > /dev/serial/by-id/*Espressif_Systems_ESP32S3* 2>&1 < /dev/serial/by-id/*Espressif_Systems_ESP32S3*");
   }
 
-  else if (cmd.startsWith("ServerConnect ")) {
+  else if (cmd.startsWith("ServerConnect "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     // the server IP is extracted from the Command array starting from the 14th index
     serverIP = Command + 14;
 
     // connect loop
-    if (!clientServer.connect(serverIP, serverPort)) {
+    if (!clientServer.connect(serverIP, serverPort))
+    {
       while (1)
         ;
     }
   }
 
-  else if (cmd.startsWith("ShellMac ")) {
+  else if (cmd.startsWith("ShellMac "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     serverIP = Command + 9;
 
     // connect loop
-    if (!clientServer.connect(serverIP, serverPort)) {
+    if (!clientServer.connect(serverIP, serverPort))
+    {
       while (1)
         ;
     }
@@ -795,7 +975,8 @@ void payloadExec() {
     Keyboard.releaseAll();
   }
 
-  else if (cmd.startsWith("ShellMacCleanup")) {
+  else if (cmd.startsWith("ShellMacCleanup"))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
 
     delay(3000);
@@ -834,14 +1015,16 @@ void payloadExec() {
     Keyboard.releaseAll();
   }
 
-  else if (cmd == "AltF2") {
+  else if (cmd == "AltF2")
+  {
     Keyboard.press(KEY_LEFT_ALT);
     Keyboard.press(KEY_F2);
     delay(100);
     Keyboard.releaseAll();
   }
 
-  else if (cmd == "CtrlAltT") {
+  else if (cmd == "CtrlAltT")
+  {
     Keyboard.press(KEY_LEFT_CTRL);
     Keyboard.press(KEY_LEFT_ALT);
     Keyboard.print("t");
@@ -849,36 +1032,42 @@ void payloadExec() {
     Keyboard.releaseAll();
   }
 
-  else if (cmd == "GuiR") {
+  else if (cmd == "GuiR")
+  {
     Keyboard.press(KEY_LEFT_GUI);
     Keyboard.print("r");
     delay(100);
     Keyboard.releaseAll();
   }
 
-  else if (cmd == "Gui") {
+  else if (cmd == "Gui")
+  {
     Keyboard.press(KEY_LEFT_GUI);
     delay(100);
     Keyboard.releaseAll();
   }
 
-  else if (cmd == "GuiSpace") {
+  else if (cmd == "GuiSpace")
+  {
     Keyboard.press(KEY_LEFT_GUI);
     Keyboard.press(KEY_SPACE);
     delay(100);
     Keyboard.releaseAll();
   }
 
-  else if (cmd == "DetectOS") {
+  else if (cmd == "DetectOS")
+  {
     onDetectOSRequested();
   }
 
-  else if (cmd.startsWith("PrintLine ")) {
+  else if (cmd.startsWith("PrintLine "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     Keyboard.println(Command + 10);
   }
 
-  else if (cmd.startsWith("WinPrintLine ")) {
+  else if (cmd.startsWith("WinPrintLine "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     writeLineWindows(Command + 13);
     delay(10);
@@ -887,43 +1076,53 @@ void payloadExec() {
     Keyboard.releaseAll();
   }
 
-  else if (cmd.startsWith("Print ")) {
+  else if (cmd.startsWith("Print "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     Keyboard.print(Command + 6);
   }
 
-  else if (cmd.startsWith("WinPrint ")) {
+  else if (cmd.startsWith("WinPrint "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     writeLineWindows(Command + 9);
   }
 
-  else if (cmd.startsWith("Press ")) {
+  else if (cmd.startsWith("Press "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     tmp_key = Command + 6;
     char key = tmp_key[0];
     cmd.remove(0, 6);
 
-    if (keyMap.find(cmd) != keyMap.end()) {
+    if (keyMap.find(cmd) != keyMap.end())
+    {
       uint8_t keyCode = keyMap[cmd];
       Keyboard.press(keyCode);
-    } else {
+    }
+    else
+    {
       uint8_t keyCode = (uint8_t)key;
       Keyboard.press(keyCode);
     }
   }
 
-  else if (cmd.startsWith("PressRelease ")) {
+  else if (cmd.startsWith("PressRelease "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     tmp_key = Command + 13;
     char key = tmp_key[0];
     cmd.remove(0, 13);
 
-    if (keyMap.find(cmd) != keyMap.end()) {
+    if (keyMap.find(cmd) != keyMap.end())
+    {
       uint8_t keyCode = keyMap[cmd];
       Keyboard.press(keyCode);
       delay(100);
       Keyboard.releaseAll();
-    } else {
+    }
+    else
+    {
       uint8_t keyCode = (uint8_t)key;
       Keyboard.press(keyCode);
       delay(100);
@@ -931,16 +1130,19 @@ void payloadExec() {
     }
   }
 
-  else if (cmd.startsWith("Release")) {
+  else if (cmd.startsWith("Release"))
+  {
     Keyboard.releaseAll();
   }
 
-  else if (cmd.startsWith("Delay ")) {
+  else if (cmd.startsWith("Delay "))
+  {
     cmd.toCharArray(Command, cmd.length() + 1);
     delay(atoi(Command + 6));
   }
 
-  else if (cmd.startsWith("RunPowershellAdmin")) {
+  else if (cmd.startsWith("RunPowershellAdmin"))
+  {
     Keyboard.press(KEY_LEFT_GUI);
     Keyboard.print("x");
     delay(100);
@@ -957,7 +1159,8 @@ void payloadExec() {
     Keyboard.releaseAll();
   }
 
-  else if (cmd.startsWith("RunCmdAdmin")) {
+  else if (cmd.startsWith("RunCmdAdmin"))
+  {
     Keyboard.press(KEY_LEFT_GUI);
     Keyboard.print("r");
     delay(100);
@@ -981,13 +1184,16 @@ void payloadExec() {
   }
 }
 
-void handleUpdateWiFi() {
-  if (controlserver.hasArg("ssid") && controlserver.hasArg("password")) {
+void handleUpdateWiFi()
+{
+  if (controlserver.hasArg("ssid") && controlserver.hasArg("password"))
+  {
     String newSSID = controlserver.arg("ssid");
     String newPassword = controlserver.arg("password");
 
     File fsUploadFile = LittleFS.open("/wifi_config.txt", FILE_WRITE);
-    if (!fsUploadFile) {
+    if (!fsUploadFile)
+    {
       controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Failed to open file for writing\"}");
       return;
     }
@@ -998,17 +1204,22 @@ void handleUpdateWiFi() {
     controlserver.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Wi-Fi config applied successfully! Device will restart.\"}");
     delay(1000); // Give time for response to be sent
     ESP.restart();
-  } else {
+  }
+  else
+  {
     controlserver.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing SSID or password\"}");
   }
 }
 
-void handleUpdateBackupWiFi() {
-  if (controlserver.hasArg("ssid") && controlserver.hasArg("password")) {
+void handleUpdateBackupWiFi()
+{
+  if (controlserver.hasArg("ssid") && controlserver.hasArg("password"))
+  {
     String ssid = controlserver.arg("ssid");
     String password = controlserver.arg("password");
     File file = LittleFS.open("/wifi_backup_config.txt", FILE_WRITE);
-    if (!file) {
+    if (!file)
+    {
       controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Failed to save backup Wi-Fi config\"}");
       return;
     }
@@ -1018,43 +1229,59 @@ void handleUpdateBackupWiFi() {
     controlserver.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Backup Wi-Fi config saved. Device will restart.\"}");
     delay(1000);
     ESP.restart();
-  } else {
+  }
+  else
+  {
     controlserver.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing SSID or password\"}");
   }
 }
 
-
-void handleDeleteWiFiConfig() {
-  if (LittleFS.exists("/wifi_config.txt")) {
-    if (LittleFS.remove("/wifi_config.txt")) {
+void handleDeleteWiFiConfig()
+{
+  if (LittleFS.exists("/wifi_config.txt"))
+  {
+    if (LittleFS.remove("/wifi_config.txt"))
+    {
       controlserver.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Wi-Fi config deleted successfully\"}");
       delay(1000); // Give time for response to be sent
       ESP.restart();
-    } else {
+    }
+    else
+    {
       controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Failed to delete the file\"}");
     }
-  } else {
+  }
+  else
+  {
     controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"File does not exist\"}");
   }
 }
 
-void handleDeleteBackupWiFiConfig() {
-  if (LittleFS.exists("/wifi_backup_config.txt")) {
-    if (LittleFS.remove("/wifi_backup_config.txt")) {
+void handleDeleteBackupWiFiConfig()
+{
+  if (LittleFS.exists("/wifi_backup_config.txt"))
+  {
+    if (LittleFS.remove("/wifi_backup_config.txt"))
+    {
       controlserver.send(200, "application/json", "{\"status\":\"success\",\"message\":\"Backup Wi-Fi config deleted successfully\"}");
       delay(1000);
       ESP.restart();
-    } else {
+    }
+    else
+    {
       controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Failed to delete backup Wi-Fi config\"}");
     }
-  } else {
+  }
+  else
+  {
     controlserver.send(500, "application/json", "{\"status\":\"error\",\"message\":\"Backup Wi-Fi config does not exist\"}");
   }
 }
 
-
-void handleUpdateUSB() {
-  if (controlserver.hasArg("vendorID") && controlserver.hasArg("productID") && controlserver.hasArg("productName") && controlserver.hasArg("manufacturerName")) {
+void handleUpdateUSB()
+{
+  if (controlserver.hasArg("vendorID") && controlserver.hasArg("productID") && controlserver.hasArg("productName") && controlserver.hasArg("manufacturerName"))
+  {
 
     String vendorID = controlserver.arg("vendorID");
     String productID = controlserver.arg("productID");
@@ -1062,7 +1289,8 @@ void handleUpdateUSB() {
     String manufacturerName = controlserver.arg("manufacturerName");
 
     File fsUploadFile = LittleFS.open("/usb_config.txt", FILE_WRITE);
-    if (!fsUploadFile) {
+    if (!fsUploadFile)
+    {
       controlserver.send(500, "text/plain", "Failed to open file for writing");
       return;
     }
@@ -1074,74 +1302,104 @@ void handleUpdateUSB() {
     fsUploadFile.close();
     controlserver.send(200, "text/plain", "USB config applied successfully! The device will restart.");
     ESP.restart();
-  } else {
+  }
+  else
+  {
     controlserver.send(400, "text/plain", "Missing USB configuration data");
   }
 }
 
-void handleDeleteUSBConfig() {
-  if (LittleFS.exists("/usb_config.txt")) {
-    if (LittleFS.remove("/usb_config.txt")) {
+void handleDeleteUSBConfig()
+{
+  if (LittleFS.exists("/usb_config.txt"))
+  {
+    if (LittleFS.remove("/usb_config.txt"))
+    {
       controlserver.send(200, "text/plain", "USB config deleted successfully");
       ESP.restart();
-    } else {
+    }
+    else
+    {
       controlserver.send(500, "text/plain", "Failed to delete USB config file");
     }
-  } else {
+  }
+  else
+  {
     controlserver.send(500, "text/plain", "USB config file does not exist");
   }
 }
 
-void handleLayout() {
-  if (controlserver.hasArg("layout")) {
+void handleLayout()
+{
+  if (controlserver.hasArg("layout"))
+  {
     String layout = controlserver.arg("layout");
     auto it = layoutMapInit.find(layout);
 
-    if (it != layoutMapInit.end()) {
+    if (it != layoutMapInit.end())
+    {
       Keyboard.setLayout(it->second);
       saveLayoutConfig(layout); // Save the layout selection
       controlserver.send(200, "text/plain", "Layout applied successfully!");
-    } else {
+    }
+    else
+    {
       controlserver.send(400, "text/plain", "Invalid layout specified.");
     }
-  } else {
+  }
+  else
+  {
     controlserver.send(400, "text/plain", "No layout specified.");
   }
 }
 
-void handleGetCurrentLayout() {
+void handleGetCurrentLayout()
+{
   String currentLayout = getCurrentLayout();
   controlserver.send(200, "text/plain", currentLayout);
 }
 
-void handleDeletePayload() {
-  if (controlserver.hasArg("configmodule")) {
+void handleDeletePayload()
+{
+  if (controlserver.hasArg("configmodule"))
+  {
     String filenameToDelete = controlserver.arg("configmodule");
-    if (filenameToDelete.length() > 0) {
+    if (filenameToDelete.length() > 0)
+    {
       deleteFile(LittleFS, filenameToDelete);
-    } else {
+    }
+    else
+    {
       controlserver.send(400, "text/plain", "File name is empty");
     }
-  } else {
+  }
+  else
+  {
     controlserver.send(400, "text/plain", "Missing file name");
   }
 }
 
-void setup() {
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("Starting device");
   USB.onEvent(usbEventCallback);
   Keyboard.onEvent(usbEventCallback);
   USBSerial.onEvent(usbEventCallback);
 
-  if (!LittleFS.begin(true)) {
+  if (!LittleFS.begin(true))
+  {
     // format in case of missing file system
     LittleFS.format();
     delay(1000);
     ESP.restart();
   }
 
-  if (LittleFS.exists("/usb_config.txt")) {
+  if (LittleFS.exists("/usb_config.txt"))
+  {
     File fsUploadFile = LittleFS.open("/usb_config.txt", FILE_READ);
-    if (fsUploadFile) {
+    if (fsUploadFile)
+    {
       String vendorID = fsUploadFile.readStringUntil('\n');
       vendorID.trim();
       String productID = fsUploadFile.readStringUntil('\n');
@@ -1162,34 +1420,41 @@ void setup() {
   Keyboard.begin();
   USBSerial.begin();
 
-  if (LittleFS.exists("/layout_config.txt")) {
-      File fsUploadFile = LittleFS.open("/layout_config.txt", FILE_READ);
-      if (fsUploadFile) {
-          String layoutKey = fsUploadFile.readStringUntil('\n');
-          layoutKey.trim();
-          fsUploadFile.close();
-          auto it = layoutMapInit.find(layoutKey);
-          if (it != layoutMapInit.end()) {
-              selected_layout = it->second;
-          }
+  if (LittleFS.exists("/layout_config.txt"))
+  {
+    File fsUploadFile = LittleFS.open("/layout_config.txt", FILE_READ);
+    if (fsUploadFile)
+    {
+      String layoutKey = fsUploadFile.readStringUntil('\n');
+      layoutKey.trim();
+      fsUploadFile.close();
+      auto it = layoutMapInit.find(layoutKey);
+      if (it != layoutMapInit.end())
+      {
+        selected_layout = it->second;
       }
+    }
   }
   Keyboard.setLayout(selected_layout);
 
-  if (LittleFS.exists("/payloads/payload-startup.txt")) {
-      File fsUploadFile = LittleFS.open("/payloads/payload-startup.txt", FILE_READ);
-      if (fsUploadFile) {
-          livepayload = fsUploadFile.readString();
-          // Set layout based on payload content
-          setLayoutFromPayload(livepayload);
-          payload_state = 1;
-          payloadExecuted = false;
-      }
+  if (LittleFS.exists("/payloads/payload-startup.txt"))
+  {
+    File fsUploadFile = LittleFS.open("/payloads/payload-startup.txt", FILE_READ);
+    if (fsUploadFile)
+    {
+      livepayload = fsUploadFile.readString();
+      // Set layout based on payload content
+      setLayoutFromPayload(livepayload);
+      payload_state = 1;
+      payloadExecuted = false;
+    }
   }
-   
-  if (LittleFS.exists("/wifi_config.txt")) {
+
+  if (LittleFS.exists("/wifi_config.txt"))
+  {
     File fsUploadFile = LittleFS.open("/wifi_config.txt", FILE_READ);
-    if (fsUploadFile) {
+    if (fsUploadFile)
+    {
       ssid = fsUploadFile.readStringUntil('\n');
       ssid.trim();
       password = fsUploadFile.readStringUntil('\n');
@@ -1202,33 +1467,40 @@ void setup() {
   unsigned long startAttemptTime = millis();
 
   // Try primary WiFi for 10 seconds
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000)
+  {
     delay(500);
   }
 
   String hostname = "cable-wind";
-  if (LittleFS.exists("/hostname_config.txt")) {
-      File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_READ);
-      if (fsUploadFile) {
-          hostname = fsUploadFile.readStringUntil('\n');
-          hostname.trim();
-          fsUploadFile.close();
-      }
+  if (LittleFS.exists("/hostname_config.txt"))
+  {
+    File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_READ);
+    if (fsUploadFile)
+    {
+      hostname = fsUploadFile.readStringUntil('\n');
+      hostname.trim();
+      fsUploadFile.close();
+    }
   }
 
-  if (!MDNS.begin(hostname.c_str())) {
-      while (1) {
-          delay(1000);
-      }
+  if (!MDNS.begin(hostname.c_str()))
+  {
+    while (1)
+    {
+      delay(1000);
+    }
   }
 
   // If primary WiFi failed, try backup WiFi if it exists
-  if (WiFi.status() != WL_CONNECTED && LittleFS.exists("/wifi_backup_config.txt")) {
+  if (WiFi.status() != WL_CONNECTED && LittleFS.exists("/wifi_backup_config.txt"))
+  {
     File file = LittleFS.open("/wifi_backup_config.txt", FILE_READ);
-    if (file) {
-      String backupSSID = file.readStringUntil('\n'); 
+    if (file)
+    {
+      String backupSSID = file.readStringUntil('\n');
       backupSSID.trim();
-      String backupPassword = file.readStringUntil('\n'); 
+      String backupPassword = file.readStringUntil('\n');
       backupPassword.trim();
       file.close();
 
@@ -1236,24 +1508,29 @@ void setup() {
       startAttemptTime = millis();
 
       // Try backup WiFi for 10 seconds
-      while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
+      while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000)
+      {
         delay(500);
       }
     }
     String hostname = "cable-wind";
-    if (LittleFS.exists("/hostname_config.txt")) {
-        File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_READ);
-        if (fsUploadFile) {
-            hostname = fsUploadFile.readStringUntil('\n');
-            hostname.trim();
-            fsUploadFile.close();
-        }
+    if (LittleFS.exists("/hostname_config.txt"))
+    {
+      File fsUploadFile = LittleFS.open("/hostname_config.txt", FILE_READ);
+      if (fsUploadFile)
+      {
+        hostname = fsUploadFile.readStringUntil('\n');
+        hostname.trim();
+        fsUploadFile.close();
+      }
     }
 
-    if (!MDNS.begin(hostname.c_str())) {
-        while (1) {
-            delay(1000);
-        }
+    if (!MDNS.begin(hostname.c_str()))
+    {
+      while (1)
+      {
+        delay(1000);
+      }
     }
   }
 
@@ -1261,9 +1538,11 @@ void setup() {
 
   {
     File root = LittleFS.open("/payloads/");
-    if (root && root.isDirectory()) {
+    if (root && root.isDirectory())
+    {
       File file = root.openNextFile();
-      while (file) {
+      while (file)
+      {
         String fileName = file.name();
         size_t fileSize = file.size();
         file = root.openNextFile();
@@ -1273,74 +1552,69 @@ void setup() {
 
   delay(3000);
 
-  controlserver.on("/", []() {
-    controlserver.send_P(200, "text/html", Index);
-  });
+  controlserver.on("/", []()
+                   { controlserver.send_P(200, "text/html", Index); });
 
   controlserver.on("/stats", handleStats);
 
-  controlserver.on("/livepayload", []() {
-    controlserver.send_P(200, "text/html", LivePayload);
-  });
+  controlserver.on("/livepayload", []()
+                   { controlserver.send_P(200, "text/html", LivePayload); });
 
-  controlserver.on("/uploadpayload", []() {
-    controlserver.send_P(200, "text/html", UploadPayload);
-  });
+  controlserver.on("/uploadpayload", []()
+                   { controlserver.send_P(200, "text/html", UploadPayload); });
 
-  controlserver.on("/config", []() {
-    controlserver.send_P(200, "text/html", Configuration);
-  });
+  controlserver.on("/config", []()
+                   { controlserver.send_P(200, "text/html", Configuration); });
 
   controlserver.on(
-      "/upload", HTTP_POST, []() {
-          controlserver.send(200, "application/json", "{\"status\":\"success\",\"message\":\"File uploaded successfully\"}");
-      },
-      handleFileUpload
-  );
+      "/upload", HTTP_POST, []()
+      { controlserver.send(200, "application/json", "{\"status\":\"success\",\"message\":\"File uploaded successfully\"}"); },
+      handleFileUpload);
 
-  controlserver.on("/listpayloads", []() {
+  controlserver.on("/listpayloads", []()
+                   {
     listDir(LittleFS, "/payloads", 0);
-    controlserver.send(200, "text/html", FileList);
-  });
+    controlserver.send(200, "text/html", FileList); });
 
-  controlserver.on("/showpayload", []() {
+  controlserver.on("/showpayload", []()
+                   {
     String fileName = controlserver.arg("payload");
     readFile(LittleFS, fileName);
-    controlserver.send(200, "text/html", FileList);
-  });
+    controlserver.send(200, "text/html", FileList); });
 
-  controlserver.on("/style.css", []() {
+  controlserver.on("/style.css", []()
+                   {
     // Set aggressive caching for CSS
     controlserver.sendHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
     controlserver.sendHeader("ETag", "\"v1.0\""); // Add ETag for cache validation
-    controlserver.send_P(200, "text/css", Style);
-  }); 
+    controlserver.send_P(200, "text/css", Style); });
 
-  controlserver.on("/javascript.js", []() {
+  controlserver.on("/javascript.js", []()
+                   {
     // Set aggressive caching for JavaScript
     controlserver.sendHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
     controlserver.sendHeader("ETag", "\"v1.0\""); // Add ETag for cache validation
-    controlserver.send_P(200, "application/javascript", Redirect);
-  });
+    controlserver.send_P(200, "application/javascript", Redirect); });
 
-  controlserver.on("/dopayload", []() {
+  controlserver.on("/dopayload", []()
+                   {
     if (livepayload != "") {
       payload_state = 1;
       payloadExecuted = false;
     }
-    controlserver.send(200, "text/plain", "Payload running...");
-  });
+    controlserver.send(200, "text/plain", "Payload running..."); });
 
-  controlserver.on("/runlivepayload", []() {
+  controlserver.on("/runlivepayload", []()
+                   {
     livepayload = controlserver.arg("livepayload");
     if (controlserver.arg("configmodule")) {
       payload_state = 1;
       payloadExecuted = false;
     }
-    controlserver.send(200, "text/plain", "Payload running...");
-  }); 
+    controlserver.send(200, "text/plain", "Payload running..."); });
 
-  controlserver.on("/runlivestartup", []() {
+  controlserver.on("/runlivestartup", []()
+                   {
       String payload_startup = controlserver.arg("livepayload");
       String fileName = "payload-startup.txt";
       String filePath = "/payloads/" + fileName;
@@ -1362,10 +1636,10 @@ void setup() {
       setLayoutFromPayload(payload_startup);
 
       payloadExecuted = true;
-      controlserver.send(200, "text/plain", "Payload saved");
-  }); 
-  
-  controlserver.on("/runlivesave", HTTP_POST, []() {
+      controlserver.send(200, "text/plain", "Payload saved"); });
+
+  controlserver.on("/runlivesave", HTTP_POST, []()
+                   {
       String payload_save = controlserver.arg("livepayload");
       String payloadName = controlserver.arg("payloadName");
       String payloadDesc = controlserver.arg("payloadDescription");
@@ -1412,41 +1686,40 @@ void setup() {
       savePayloadMetadata(filePath, payloadName, payloadDesc);
 
       payloadExecuted = true;
-      controlserver.send(200, "text/plain", "Payload saved");
-  });
+      controlserver.send(200, "text/plain", "Payload saved"); });
 
-  controlserver.on("/payloadstatuspayload", []() {
+  controlserver.on("/payloadstatuspayload", []()
+                   {
     if (payloadExecuted) {
       controlserver.send(200, "application/json", "{\"status\": \"executed\"}");
       payloadExecuted = false;
     } else {
       controlserver.send(200, "application/json", "{\"status\": \"pending\"}");
-    }
-  });
+    } });
 
-  controlserver.on("/payloadstatusstartup", []() {
+  controlserver.on("/payloadstatusstartup", []()
+                   {
     if (payloadExecuted) {
       controlserver.send(200, "application/json", "{\"status\": \"executed\"}");
       payloadExecuted = false;
     } else {
       controlserver.send(200, "application/json", "{\"status\": \"pending\"}");
-    }
-  });
+    } });
 
-  controlserver.on("/payloadstatussave", []() {
+  controlserver.on("/payloadstatussave", []()
+                   {
     if (payloadExecuted) {
       controlserver.send(200, "application/json", "{\"status\": \"executed\"}");
       payloadExecuted = false;
     } else {
       controlserver.send(200, "application/json", "{\"status\": \"pending\"}");
-    }
-  });
+    } });
 
-  controlserver.on("/autoexecplanning", []() {
-      controlserver.send_P(200, "text/html", AutoExecPlanning);
-  });
+  controlserver.on("/autoexecplanning", []()
+                   { controlserver.send_P(200, "text/html", AutoExecPlanning); });
 
-  controlserver.on("/listpayloadsdata", []() {
+  controlserver.on("/listpayloadsdata", []()
+                   {
       DynamicJsonDocument doc(4096);
       JsonArray payloads = doc.to<JsonArray>();
 
@@ -1472,10 +1745,10 @@ void setup() {
 
       String output;
       serializeJson(doc, output);
-      controlserver.send(200, "application/json", output);
-  });
+      controlserver.send(200, "application/json", output); });
 
-  controlserver.on("/saveautoexecplan", HTTP_POST, []() {
+  controlserver.on("/saveautoexecplan", HTTP_POST, []()
+                   {
       String payload = controlserver.arg("plain");
       DynamicJsonDocument doc(2048);
       deserializeJson(doc, payload);
@@ -1488,10 +1761,10 @@ void setup() {
 
       serializeJson(doc, file);
       file.close();
-      controlserver.send(200, "application/json", "{\"success\":true}");
-  });
+      controlserver.send(200, "application/json", "{\"success\":true}"); });
 
-  controlserver.on("/getautoexecplan", []() {
+  controlserver.on("/getautoexecplan", []()
+                   {
       if (!LittleFS.exists("/autoexec_plan.json")) {
           controlserver.send(200, "application/json", "{}");
           return;
@@ -1505,17 +1778,17 @@ void setup() {
 
       String content = file.readString();
       file.close();
-      controlserver.send(200, "application/json", content);
-  });
+      controlserver.send(200, "application/json", content); });
 
-  controlserver.on("/clearautoexecplan", HTTP_POST, []() {
+  controlserver.on("/clearautoexecplan", HTTP_POST, []()
+                   {
       if (LittleFS.exists("/autoexec_plan.json")) {
           LittleFS.remove("/autoexec_plan.json");
       }
-      controlserver.send(200, "application/json", "{\"success\":true}");
-  });
+      controlserver.send(200, "application/json", "{\"success\":true}"); });
 
-  controlserver.on("/updatepayload", HTTP_POST, []() {
+  controlserver.on("/updatepayload", HTTP_POST, []()
+                   {
       if (controlserver.hasArg("plain")) {  // Check for JSON data
           String payload = controlserver.arg("plain");
           DynamicJsonDocument doc(2048);
@@ -1543,9 +1816,7 @@ void setup() {
           }
       } else {
           controlserver.send(400, "application/json", "{\"success\":false,\"message\":\"No data received\"}");
-      }
-  });
-
+      } });
 
   controlserver.on("/updatewifi", HTTP_POST, handleUpdateWiFi);
   controlserver.on("/layout", HTTP_POST, handleLayout);
@@ -1563,7 +1834,8 @@ void setup() {
   controlserver.begin();
 }
 
-void loop() {
+void loop()
+{
   controlserver.handleClient();
   delay(10);
   vTaskDelay(1);
@@ -1575,107 +1847,124 @@ void loop() {
   static DynamicJsonDocument pendingAutoExecPlan(2048);
   static bool hasPendingPlan = false;
 
-  if (!autoExecChecked && LittleFS.exists("/autoexec_plan.json")) {
-      File file = LittleFS.open("/autoexec_plan.json", FILE_READ);
-      if (file) {
-          String content = file.readString();
-          file.close();
-          deserializeJson(pendingAutoExecPlan, content);
+  if (!autoExecChecked && LittleFS.exists("/autoexec_plan.json"))
+  {
+    File file = LittleFS.open("/autoexec_plan.json", FILE_READ);
+    if (file)
+    {
+      String content = file.readString();
+      file.close();
+      deserializeJson(pendingAutoExecPlan, content);
 
-          if (pendingAutoExecPlan["enabled"] == true) {
-              // Check if we have a no-detection payload
-              if (pendingAutoExecPlan["nodetection"]) {
-                  String osPayloadPath = pendingAutoExecPlan["nodetection"]["path"].as<String>();
-                  if (osPayloadPath.length() > 0 && LittleFS.exists(osPayloadPath)) {
-                      readFile(LittleFS, osPayloadPath);
-                      payload_state = 1;
-                      payloadExecuted = false;
-                      autoExecChecked = true;
-                  }
-              } else {
-                  // If no no-detection payload, proceed with OS detection
-                  onDetectOSRequested();
-                  osDetectionStartTime = millis();
-                  osDetectionInProgress = true;
-                  hasPendingPlan = true;
-                  autoExecChecked = true;
-              }
+      if (pendingAutoExecPlan["enabled"] == true)
+      {
+        // Check if we have a no-detection payload
+        if (pendingAutoExecPlan["nodetection"])
+        {
+          String osPayloadPath = pendingAutoExecPlan["nodetection"]["path"].as<String>();
+          if (osPayloadPath.length() > 0 && LittleFS.exists(osPayloadPath))
+          {
+            readFile(LittleFS, osPayloadPath);
+            payload_state = 1;
+            payloadExecuted = false;
+            autoExecChecked = true;
           }
+        }
+        else
+        {
+          // If no no-detection payload, proceed with OS detection
+          onDetectOSRequested();
+          osDetectionStartTime = millis();
+          osDetectionInProgress = true;
+          hasPendingPlan = true;
+          autoExecChecked = true;
+        }
       }
+    }
   }
 
   // Handle OS detection completion
-  if (osDetectionInProgress) {
-      if (os_detection_complete) {
-          // Detection complete, execute payload if available
-          if (hasPendingPlan) {
-              String osPayloadPath = "";  
+  if (osDetectionInProgress)
+  {
+    if (os_detection_complete)
+    {
+      // Detection complete, execute payload if available
+      if (hasPendingPlan)
+      {
+        String osPayloadPath = "";
 
-              switch (detected_os) {
-                  case OS_WINDOWS: 
-                      osPayloadPath = pendingAutoExecPlan["windows"]["path"].as<String>(); 
-                      break;
-                  case OS_LINUX:   
-                      osPayloadPath = pendingAutoExecPlan["linux"]["path"].as<String>(); 
-                      break;
-                  case OS_IOS:     
-                      osPayloadPath = pendingAutoExecPlan["ios"]["path"].as<String>(); 
-                      break;
-                  case OS_MACOS:   
-                      osPayloadPath = pendingAutoExecPlan["macos"]["path"].as<String>(); 
-                      break;
-                  case OS_ANDROID: 
-                      osPayloadPath = pendingAutoExecPlan["android"]["path"].as<String>(); 
-                      break;
-                  default: 
-                      break;
-              }
+        switch (detected_os)
+        {
+        case OS_WINDOWS:
+          osPayloadPath = pendingAutoExecPlan["windows"]["path"].as<String>();
+          break;
+        case OS_LINUX:
+          osPayloadPath = pendingAutoExecPlan["linux"]["path"].as<String>();
+          break;
+        case OS_IOS:
+          osPayloadPath = pendingAutoExecPlan["ios"]["path"].as<String>();
+          break;
+        case OS_MACOS:
+          osPayloadPath = pendingAutoExecPlan["macos"]["path"].as<String>();
+          break;
+        case OS_ANDROID:
+          osPayloadPath = pendingAutoExecPlan["android"]["path"].as<String>();
+          break;
+        default:
+          break;
+        }
 
-              if (osPayloadPath.length() > 0 && LittleFS.exists(osPayloadPath)) {
-                  readFile(LittleFS, osPayloadPath);
-                  payload_state = 1;
-                  payloadExecuted = false;
-              }
-          }
-          osDetectionInProgress = false;
-          hasPendingPlan = false;
-      } 
-      else if (millis() - osDetectionStartTime > 30000) {
-          // Timeout after 30 seconds if detection fails
-          os = "OS Unknown";
-          os_detection_complete = true;
-          osDetectionInProgress = false;
-          hasPendingPlan = false;
+        if (osPayloadPath.length() > 0 && LittleFS.exists(osPayloadPath))
+        {
+          readFile(LittleFS, osPayloadPath);
+          payload_state = 1;
+          payloadExecuted = false;
+        }
       }
+      osDetectionInProgress = false;
+      hasPendingPlan = false;
+    }
+    else if (millis() - osDetectionStartTime > 30000)
+    {
+      // Timeout after 30 seconds if detection fails
+      os = "OS Unknown";
+      os_detection_complete = true;
+      osDetectionInProgress = false;
+      hasPendingPlan = false;
+    }
   }
-  
-  while (USBSerial.available()) {
-      String data = USBSerial.readString();
-      clientServer.print(data);
-  }
-  while (clientServer.available()) {
-      String data = clientServer.readString();
-      USBSerial.print(data);
-  }
-  if (payload_state == 1) {
-      // Set layout before executing payload
-      setLayoutFromPayload(livepayload);
 
-      char *splitlines;
-      int payloadlen = livepayload.length() + 1;
-      char request[payloadlen];
-      livepayload.toCharArray(request, payloadlen);
-      splitlines = strtok(request, "\r\n");
-      while (splitlines != NULL) {
-          cmd = splitlines;
-          payloadExec();
-          splitlines = strtok(NULL, "\r\n");
-          vTaskDelay(1);
-      }
-      payload_state = 0;
-      cmd = "";
-      livepayload = "";
-      payloadExecuted = true;
+  while (USBSerial.available())
+  {
+    String data = USBSerial.readString();
+    clientServer.print(data);
+  }
+  while (clientServer.available())
+  {
+    String data = clientServer.readString();
+    USBSerial.print(data);
+  }
+  if (payload_state == 1)
+  {
+    // Set layout before executing payload
+    setLayoutFromPayload(livepayload);
+
+    char *splitlines;
+    int payloadlen = livepayload.length() + 1;
+    char request[payloadlen];
+    livepayload.toCharArray(request, payloadlen);
+    splitlines = strtok(request, "\r\n");
+    while (splitlines != NULL)
+    {
+      cmd = splitlines;
+      payloadExec();
+      splitlines = strtok(NULL, "\r\n");
+      vTaskDelay(1);
+    }
+    payload_state = 0;
+    cmd = "";
+    livepayload = "";
+    payloadExecuted = true;
   }
   vTaskDelay(1);
 }
